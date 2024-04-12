@@ -14,6 +14,8 @@ try:
 except ImportError as e:
     raise error.DependencyNotInstalled("{}. (HINT: you need to install mujoco_py, and also perform the setup instructions here: https://github.com/openai/mujoco-py/.)".format(e))
 
+DEFAULT_SIZE = 500
+
 def get_sim(model_path):
     if model_path.startswith("/"):
         fullpath = model_path
@@ -36,6 +38,8 @@ class MujocoEnv(gym.Env):
             self.sim = sim
         self.data = self.sim.data
         self.model = self.sim.model
+        self.viewer = None
+        self._viewers = {}
 
         self.frame_skip = frame_skip
         self.metadata = {
@@ -134,13 +138,40 @@ class MujocoEnv(gym.Env):
             #self.viewer._run_speed /= self.frame_skip
             self.viewer.render()
 
-    def render(self, *args, **kwargs):
-        pass
-        #return self.mj_render()
+    # def render(self, *args, **kwargs):
+    #     pass
+    #     #return self.mj_render()
+    def render(self, mode='human', width=DEFAULT_SIZE, height=DEFAULT_SIZE, depth=False):
+        if 'rgb_array' in mode:
+            self._get_viewer(mode).render(width, height)
+            # window size used for old mujoco-py:
+            data = self._get_viewer(mode).read_pixels(width, height, depth=depth)
+            # original image is upside-down, so flip it
+            if not depth:
+                return data[::-1, :, :]
+            else:
+                return data[0][::-1, :, :], data[1][::-1, :]
+        elif mode == 'human':
+            self._get_viewer(mode).render()
 
-    def _get_viewer(self):
-        pass
-        #return None
+    # def _get_viewer(self):
+    #     pass
+    #     #return None
+    def _get_viewer(self, mode):
+        self.viewer = self._viewers.get(mode)
+        if self.viewer is None:
+            if mode == 'human':
+                self.viewer = mujoco_py.MjViewer(self.sim)
+            elif 'rgb_array' in mode:
+                self.viewer = mujoco_py.MjRenderContextOffscreen(self.sim, 0)
+            self.viewer_setup()
+            self._viewers[mode] = self.viewer
+        # if mode == 'rgb_array_y':
+        #     self.viewer_setup(view_angle='y')
+        # else:
+        #     self.viewer_setup(view_angle='x')
+        self.viewer_setup()
+        return self.viewer
 
     def state_vector(self):
         state = self.sim.get_state()
